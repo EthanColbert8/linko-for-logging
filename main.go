@@ -19,8 +19,13 @@ func main() {
 	dataDir := flag.String("data", "./data", "directory to store data")
 	flag.Parse()
 
+	fmt.Printf("Linko is running on http://localhost:%d\n", *httpPort)
+
 	status := run(ctx, cancel, *httpPort, *dataDir)
 	cancel()
+
+	fmt.Println("Linko is shutting down")
+
 	os.Exit(status)
 }
 
