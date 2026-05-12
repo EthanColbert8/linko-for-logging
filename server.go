@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -22,7 +23,7 @@ func newServer(store store.Store, port int, cancel context.CancelFunc) *server {
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", port),
-		Handler: mux,
+		Handler: loggerMiddleware(logger, mux),
 	}
 
 	s := &server{
@@ -67,4 +68,11 @@ func (s *server) handlerShutdown(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	go s.cancel()
+}
+
+func loggerMiddleware(logger *log.Logger, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r)
+		logger.Printf("Served request: %s %s", r.Method, r.URL.Path)
+	})
 }
