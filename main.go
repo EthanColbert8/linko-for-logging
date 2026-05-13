@@ -12,27 +12,34 @@ import (
 	"boot.dev/linko/internal/store"
 )
 
-var logger = log.New(os.Stderr, "DEBUG: ", log.LstdFlags)
-
 func main() {
+	accessLog, err := os.Create("linko.access.log")
+	if err != nil {
+		log.Fatalf("failed to create access log file: %v", err)
+	}
+	defer accessLog.Close()
+
+	standardLogger := log.New(os.Stderr, "DEBUG: ", log.LstdFlags)
+	accessLogger := log.New(accessLog, "INFO: ", log.LstdFlags)
+
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
 	httpPort := flag.Int("port", 8899, "port to listen on")
 	dataDir := flag.String("data", "./data", "directory to store data")
 	flag.Parse()
 
-	status := run(ctx, cancel, *httpPort, *dataDir)
+	status := run(ctx, cancel, *httpPort, *dataDir, standardLogger, accessLogger)
 	cancel()
 	os.Exit(status)
 }
 
-func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string) int {
-	st, err := store.New(dataDir)
+func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string, standardLogger, accessLogger *log.Logger) int {
+	st, err := store.New(dataDir, standardLogger)
 	if err != nil {
-		logger.Printf("failed to create store: %v", err)
+		standardLogger.Printf("failed to create store: %v", err)
 		return 1
 	}
-	s := newServer(*st, httpPort, cancel)
+	s := newServer(*st, httpPort, cancel, accessLogger)
 	var serverErr error
 	go func() {
 		serverErr = s.start()
@@ -42,14 +49,14 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	logger.Println("Linko is shutting down")
+	standardLogger.Println("Linko is shutting down")
 
 	if err := s.shutdown(shutdownCtx); err != nil {
-		logger.Printf("failed to shutdown server: %v", err)
+		standardLogger.Printf("failed to shutdown server: %v", err)
 		return 1
 	}
 	if serverErr != nil {
-		logger.Printf("server error: %v", serverErr)
+		standardLogger.Printf("server error: %v", serverErr)
 		return 1
 	}
 	return 0
