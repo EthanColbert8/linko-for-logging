@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"flag"
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -13,14 +15,11 @@ import (
 )
 
 func main() {
-	accessLog, err := os.Create("linko.access.log")
+	logger, logFile, err := initializeLogger()
 	if err != nil {
-		log.Fatalf("failed to create access log file: %v", err)
+		log.Fatalf("failed to initialize logger: %v", err)
 	}
-	defer accessLog.Close()
-
-	standardLogger := log.New(os.Stderr, "DEBUG: ", log.LstdFlags)
-	accessLogger := log.New(accessLog, "INFO: ", log.LstdFlags)
+	defer logFile.Close()
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
@@ -28,18 +27,18 @@ func main() {
 	dataDir := flag.String("data", "./data", "directory to store data")
 	flag.Parse()
 
-	status := run(ctx, cancel, *httpPort, *dataDir, standardLogger, accessLogger)
+	status := run(ctx, cancel, *httpPort, *dataDir, logger)
 	cancel()
 	os.Exit(status)
 }
 
-func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string, standardLogger, accessLogger *log.Logger) int {
-	st, err := store.New(dataDir, standardLogger)
+func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string, logger *log.Logger) int {
+	st, err := store.New(dataDir, logger)
 	if err != nil {
-		standardLogger.Printf("failed to create store: %v", err)
+		logger.Printf("failed to create store: %v", err)
 		return 1
 	}
-	s := newServer(*st, httpPort, cancel, accessLogger)
+	s := newServer(*st, httpPort, cancel, logger)
 	var serverErr error
 	go func() {
 		serverErr = s.start()
@@ -49,15 +48,37 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	standardLogger.Println("Linko is shutting down")
+	logger.Println("Linko is shutting down")
 
 	if err := s.shutdown(shutdownCtx); err != nil {
-		standardLogger.Printf("failed to shutdown server: %v", err)
+		logger.Printf("failed to shutdown server: %v", err)
 		return 1
 	}
 	if serverErr != nil {
-		standardLogger.Printf("server error: %v", serverErr)
+		logger.Printf("server error: %v", serverErr)
 		return 1
 	}
 	return 0
+}
+
+func initializeLogger() (*log.Logger, *os.File, error) {
+	logFileName := os.Getenv("LINKO_LOG_FILE")
+
+	var newLogger *log.Logger = nil
+	var logFile *os.File = nil
+	var err error
+
+	if logFileName != "" {
+		logFile, err = os.Create(logFileName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create log file: %w", err)
+		}
+
+		logWriter := io.MultiWriter(os.Stderr, logFile)
+		newLogger = log.New(logWriter, "", log.LstdFlags)
+	} else {
+		newLogger = log.New(os.Stderr, "", log.LstdFlags)
+	}
+
+	return newLogger, logFile, nil
 }
