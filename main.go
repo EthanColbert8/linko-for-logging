@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -14,12 +15,14 @@ import (
 	"boot.dev/linko/internal/store"
 )
 
+type closeFunc func() error
+
 func main() {
-	logger, logFile, err := initializeLogger()
+	logger, logCloser, err := initializeLogger()
 	if err != nil {
 		log.Fatalf("failed to initialize logger: %v", err)
 	}
-	defer logFile.Close()
+	// defer logCloser() // logCloser is called right before explicit `os.Exit(status)`
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 
@@ -29,6 +32,8 @@ func main() {
 
 	status := run(ctx, cancel, *httpPort, *dataDir, logger)
 	cancel()
+
+	logCloser()
 	os.Exit(status)
 }
 
@@ -61,11 +66,12 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	return 0
 }
 
-func initializeLogger() (*log.Logger, *os.File, error) {
+func initializeLogger() (*log.Logger, closeFunc, error) {
 	logFileName := os.Getenv("LINKO_LOG_FILE")
 
 	var newLogger *log.Logger = nil
 	var logFile *os.File = nil
+	var bufferedFile *bufio.Writer = nil
 	var err error
 
 	if logFileName != "" {
@@ -74,11 +80,29 @@ func initializeLogger() (*log.Logger, *os.File, error) {
 			return nil, nil, fmt.Errorf("failed to create log file: %w", err)
 		}
 
-		logWriter := io.MultiWriter(os.Stderr, logFile)
+		bufferedFile = bufio.NewWriterSize(logFile, 8192)
+		logWriter := io.MultiWriter(os.Stderr, bufferedFile)
+
 		newLogger = log.New(logWriter, "", log.LstdFlags)
 	} else {
 		newLogger = log.New(os.Stderr, "", log.LstdFlags)
 	}
 
-	return newLogger, logFile, nil
+	return newLogger, getCloseLogsFunc(logFile, bufferedFile), nil
+}
+
+func getCloseLogsFunc(file *os.File, buffer *bufio.Writer) closeFunc {
+	return func() error {
+		err1 := buffer.Flush()
+		if err1 != nil {
+			fmt.Fprintf(os.Stderr, "failed to flush log buffer: %v", err1)
+		}
+
+		err2 := file.Close()
+		if err2 != nil {
+			fmt.Fprintf(os.Stderr, "error closing file: %v", err2)
+		}
+
+		return err1
+	}
 }
