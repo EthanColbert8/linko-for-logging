@@ -6,7 +6,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"syscall"
@@ -20,7 +20,8 @@ type closeFunc func() error
 func main() {
 	logger, logCloser, err := initializeLogger()
 	if err != nil {
-		log.Fatalf("failed to initialize logger: %v", err)
+		fmt.Printf("failed to initialize logger: %v", err)
+		os.Exit(1)
 	}
 	// defer logCloser() // logCloser is called right before explicit `os.Exit(status)`
 
@@ -37,10 +38,10 @@ func main() {
 	os.Exit(status)
 }
 
-func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string, logger *log.Logger) int {
+func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir string, logger *slog.Logger) int {
 	st, err := store.New(dataDir, logger)
 	if err != nil {
-		logger.Printf("failed to create store: %v", err)
+		logger.Error(fmt.Sprintf("failed to create store: %v", err))
 		return 1
 	}
 	s := newServer(*st, httpPort, cancel, logger)
@@ -53,23 +54,23 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	logger.Println("Linko is shutting down")
+	logger.Info("Linko is shutting down")
 
 	if err := s.shutdown(shutdownCtx); err != nil {
-		logger.Printf("failed to shutdown server: %v", err)
+		logger.Error(fmt.Sprintf("failed to shutdown server: %v", err))
 		return 1
 	}
 	if serverErr != nil {
-		logger.Printf("server error: %v", serverErr)
+		logger.Error(fmt.Sprintf("server error: %v", serverErr))
 		return 1
 	}
 	return 0
 }
 
-func initializeLogger() (*log.Logger, closeFunc, error) {
+func initializeLogger() (*slog.Logger, closeFunc, error) {
 	logFileName := os.Getenv("LINKO_LOG_FILE")
 
-	var newLogger *log.Logger = nil
+	var newLogger *slog.Logger = nil
 	var logFile *os.File = nil
 	var bufferedFile *bufio.Writer = nil
 	var err error
@@ -83,9 +84,9 @@ func initializeLogger() (*log.Logger, closeFunc, error) {
 		bufferedFile = bufio.NewWriterSize(logFile, 8192)
 		logWriter := io.MultiWriter(os.Stderr, bufferedFile)
 
-		newLogger = log.New(logWriter, "", log.LstdFlags)
+		newLogger = slog.New(slog.NewTextHandler(logWriter, nil))
 	} else {
-		newLogger = log.New(os.Stderr, "", log.LstdFlags)
+		newLogger = slog.New(slog.NewTextHandler(os.Stderr, nil))
 	}
 
 	return newLogger, getCloseLogsFunc(logFile, bufferedFile), nil
