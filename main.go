@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -54,7 +53,7 @@ func run(ctx context.Context, cancel context.CancelFunc, httpPort int, dataDir s
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	logger.Info("Linko is shutting down")
+	logger.Debug("Linko is shutting down")
 
 	if err := s.shutdown(shutdownCtx); err != nil {
 		logger.Error(fmt.Sprintf("failed to shutdown server: %v", err))
@@ -75,18 +74,27 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 	var bufferedFile *bufio.Writer = nil
 	var err error
 
+	debugOptions := slog.HandlerOptions{
+		Level: slog.LevelDebug,
+	}
+	stderrLogHandler := slog.NewTextHandler(os.Stderr, &debugOptions)
+
 	if logFileName != "" {
 		logFile, err = os.Create(logFileName)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create log file: %w", err)
 		}
-
 		bufferedFile = bufio.NewWriterSize(logFile, 8192)
-		logWriter := io.MultiWriter(os.Stderr, bufferedFile)
 
-		newLogger = slog.New(slog.NewTextHandler(logWriter, nil))
+		infoOptions := slog.HandlerOptions{
+			Level: slog.LevelInfo,
+		}
+		fileLogHandler := slog.NewTextHandler(bufferedFile, &infoOptions)
+
+		theLogHandler := slog.NewMultiHandler(fileLogHandler, stderrLogHandler)
+		newLogger = slog.New(theLogHandler)
 	} else {
-		newLogger = slog.New(slog.NewTextHandler(os.Stderr, nil))
+		newLogger = slog.New(stderrLogHandler)
 	}
 
 	return newLogger, getCloseLogsFunc(logFile, bufferedFile), nil
