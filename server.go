@@ -75,6 +75,10 @@ func (s *server) handlerShutdown(w http.ResponseWriter, r *http.Request) {
 func loggerMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		next.ServeHTTP(w, r)
-		logger.Info(fmt.Sprintf("Served request: %s %s", r.Method, r.URL.Path))
+		logger.Info("Served request",
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.String("client_ip", r.RemoteAddr),
+		)
 	})
 }
