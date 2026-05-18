@@ -89,7 +89,7 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 		infoOptions := slog.HandlerOptions{
 			Level: slog.LevelInfo,
 		}
-		fileLogHandler := slog.NewTextHandler(bufferedFile, &infoOptions)
+		fileLogHandler := slog.NewJSONHandler(bufferedFile, &infoOptions)
 
 		theLogHandler := slog.NewMultiHandler(fileLogHandler, stderrLogHandler)
 		newLogger = slog.New(theLogHandler)
