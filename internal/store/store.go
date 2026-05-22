@@ -106,7 +106,7 @@ func (s *Store) Lookup(_ context.Context, short string) (string, error) {
 	shortcodeFilepath := filepath.Join(s.dir, short)
 	data, err := os.ReadFile(shortcodeFilepath)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", ErrNotFound
+		return "", fmt.Errorf("read %s: %w", shortcodeFilepath, ErrNotFound)
 	}
 	if err != nil {
 		return "", fmt.Errorf("read %s: %w", shortcodeFilepath, err)
