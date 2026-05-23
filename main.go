@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"boot.dev/linko/internal/linkoerr"
 	"boot.dev/linko/internal/store"
 	pkgerr "github.com/pkg/errors"
 )
@@ -132,6 +133,8 @@ func replaceAttr(groups []string, a slog.Attr) slog.Attr {
 			return a
 		}
 
+		attrs := linkoerr.Attrs(err)
+
 		if stackErr, ok := errors.AsType[stackTracer](err); ok {
 			errMessage := slog.Attr{
 				Key:   "message",
@@ -142,8 +145,10 @@ func replaceAttr(groups []string, a slog.Attr) slog.Attr {
 				Value: slog.StringValue(fmt.Sprintf("%+v", stackErr.StackTrace())),
 			}
 
-			return slog.GroupAttrs("error", errMessage, errTrace)
+			attrs = append(attrs, errMessage, errTrace)
 		}
+
+		return slog.GroupAttrs("error", attrs...)
 	}
 	return a
 }
