@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -18,6 +17,7 @@ import (
 	"github.com/lmittmann/tint"
 	"github.com/mattn/go-isatty"
 	pkgerr "github.com/pkg/errors"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 type closeFunc func() error
@@ -86,9 +86,7 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 	logFileName := os.Getenv("LINKO_LOG_FILE")
 
 	var newLogger *slog.Logger = nil
-	var logFile *os.File = nil
-	var bufferedFile *bufio.Writer = nil
-	var err error
+	var rotatedLogger *lumberjack.Logger = nil
 
 	noColor := !(isatty.IsCygwinTerminal(os.Stderr.Fd()) || isatty.IsTerminal(os.Stderr.Fd()))
 	debugOptions := tint.Options{
@@ -99,17 +97,20 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 	stderrLogHandler := tint.NewHandler(os.Stderr, &debugOptions)
 
 	if logFileName != "" {
-		logFile, err = os.Create(logFileName)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to create log file: %w", err)
+		rotatedLogger = &lumberjack.Logger{
+			Filename:   logFileName,
+			MaxSize:    1,
+			MaxAge:     28,
+			MaxBackups: 10,
+			LocalTime:  false,
+			Compress:   true,
 		}
-		bufferedFile = bufio.NewWriterSize(logFile, 8192)
 
 		infoOptions := slog.HandlerOptions{
 			Level:       slog.LevelInfo,
 			ReplaceAttr: replaceAttr,
 		}
-		fileLogHandler := slog.NewJSONHandler(bufferedFile, &infoOptions)
+		fileLogHandler := slog.NewJSONHandler(rotatedLogger, &infoOptions)
 
 		theLogHandler := slog.NewMultiHandler(fileLogHandler, stderrLogHandler)
 		newLogger = slog.New(theLogHandler)
@@ -127,22 +128,21 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 		slog.String("hostname", hostName),
 	)
 
-	return newLogger, getCloseLogsFunc(logFile, bufferedFile), nil
+	return newLogger, getCloseLogsFunc(rotatedLogger), nil
 }
 
-func getCloseLogsFunc(file *os.File, buffer *bufio.Writer) closeFunc {
+func getCloseLogsFunc(logger *lumberjack.Logger) closeFunc {
 	return func() error {
-		err1 := buffer.Flush()
-		if err1 != nil {
-			fmt.Fprintf(os.Stderr, "failed to flush log buffer: %v", err1)
+		if logger == nil {
+			return nil
 		}
 
-		err2 := file.Close()
-		if err2 != nil {
-			fmt.Fprintf(os.Stderr, "error closing file: %v", err2)
+		err := logger.Close()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "failed to close logger: %v", err)
 		}
 
-		return err1
+		return err
 	}
 }
 
