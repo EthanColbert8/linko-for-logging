@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"boot.dev/linko/internal/build"
 	"boot.dev/linko/internal/linkoerr"
 	"boot.dev/linko/internal/store"
 	pkgerr "github.com/pkg/errors"
@@ -111,6 +112,11 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 	} else {
 		newLogger = slog.New(stderrLogHandler)
 	}
+
+	newLogger = newLogger.With(
+		slog.String("git_sha", build.GitSHA),
+		slog.String("build_time", build.BuildTime),
+	)
 
 	return newLogger, getCloseLogsFunc(logFile, bufferedFile), nil
 }
