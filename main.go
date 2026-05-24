@@ -15,6 +15,8 @@ import (
 	"boot.dev/linko/internal/build"
 	"boot.dev/linko/internal/linkoerr"
 	"boot.dev/linko/internal/store"
+	"github.com/lmittmann/tint"
+	"github.com/mattn/go-isatty"
 	pkgerr "github.com/pkg/errors"
 )
 
@@ -88,11 +90,13 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 	var bufferedFile *bufio.Writer = nil
 	var err error
 
-	debugOptions := slog.HandlerOptions{
+	noColor := !(isatty.IsCygwinTerminal(os.Stderr.Fd()) || isatty.IsTerminal(os.Stderr.Fd()))
+	debugOptions := tint.Options{
+		NoColor:     noColor,
 		Level:       slog.LevelDebug,
 		ReplaceAttr: replaceAttr,
 	}
-	stderrLogHandler := slog.NewTextHandler(os.Stderr, &debugOptions)
+	stderrLogHandler := tint.NewHandler(os.Stderr, &debugOptions)
 
 	if logFileName != "" {
 		logFile, err = os.Create(logFileName)
