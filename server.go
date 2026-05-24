@@ -49,6 +49,14 @@ const logContextKey contextKey = "log_context"
 
 type LogContext struct {
 	Username string
+	Error    error
+}
+
+func httpError(ctx context.Context, w http.ResponseWriter, status int, err error) {
+	if logCtx, ok := ctx.Value(logContextKey).(*LogContext); ok {
+		logCtx.Error = err
+	}
+	http.Error(w, err.Error(), status)
 }
 
 type server struct {
@@ -137,6 +145,9 @@ func loggerMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 
 		if logContextValue.Username != "" {
 			logAttrs = append(logAttrs, slog.String("user", logContextValue.Username))
+		}
+		if logContextValue.Error != nil {
+			logAttrs = append(logAttrs, slog.Any("error", logContextValue.Error))
 		}
 
 		logger.Info("Served request", logAttrs...)
