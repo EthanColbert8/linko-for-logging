@@ -113,9 +113,14 @@ func initializeLogger() (*slog.Logger, closeFunc, error) {
 		newLogger = slog.New(stderrLogHandler)
 	}
 
+	hostName, _ := os.Hostname()
+
+	// Add build and runtime info to all logs
 	newLogger = newLogger.With(
 		slog.String("git_sha", build.GitSHA),
 		slog.String("build_time", build.BuildTime),
+		slog.String("env", os.Getenv("ENV")),
+		slog.String("hostname", hostName),
 	)
 
 	return newLogger, getCloseLogsFunc(logFile, bufferedFile), nil
