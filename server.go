@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"boot.dev/linko/internal/store"
@@ -146,7 +147,7 @@ func loggerMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 		logAttrs := []any{
 			slog.String("method", r.Method),
 			slog.String("path", r.URL.Path),
-			slog.String("client_ip", r.RemoteAddr),
+			slog.String("client_ip", redactIP(r.RemoteAddr)),
 			slog.Duration("duration", reqDuration),
 			slog.String("request_id", reqId),
 			slog.Int("request_body_bytes", spyReader.bytesRead),
@@ -176,4 +177,22 @@ func requestIdMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-ID", reqId)
 		next.ServeHTTP(w, r)
 	})
+}
+
+// a helper to obfuscate client IP addresses
+func redactIP(addr string) string {
+	hostStr, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "INVALID_IP"
+	}
+
+	host := net.ParseIP(hostStr).To4()
+	if host == nil {
+		return addr
+	}
+
+	octets := strings.Split(host.String(), ".")
+	redactedHost := fmt.Sprintf("%s.%s.%s.x", octets[0], octets[1], octets[2])
+
+	return redactedHost
 }
