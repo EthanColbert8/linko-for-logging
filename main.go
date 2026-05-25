@@ -6,8 +6,11 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"os/signal"
+	"slices"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +22,17 @@ import (
 	pkgerr "github.com/pkg/errors"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
+
+var sensitiveKeys = []string{
+	"password",
+	"key",
+	"apiKey",
+	"secret",
+	"pin",
+	"creditcardno",
+	"dsn",
+	"user",
+}
 
 type closeFunc func() error
 
@@ -167,6 +181,16 @@ func replaceAttr(groups []string, a slog.Attr) slog.Attr {
 		attrs := errorAttrs(err)
 		return slog.GroupAttrs("error", attrs...)
 	}
+
+	// last-resort security filters
+	if slices.Contains(sensitiveKeys, a.Key) {
+		return slog.String(a.Key, "[REDACTED]")
+	} else if a.Value.Kind() == slog.KindString && strings.Contains(strings.ToLower(a.Key), "url") {
+		if newUrlString, wasUrl := sanitizeURL(a.Value.String()); wasUrl {
+			return slog.String(a.Key, newUrlString)
+		}
+	}
+
 	return a
 }
 
@@ -188,4 +212,17 @@ func errorAttrs(err error) []slog.Attr {
 	}
 
 	return attrs
+}
+
+func sanitizeURL(theUrl string) (string, bool) {
+	urlValue, err := url.Parse(theUrl)
+	if err != nil {
+		return "", false
+	}
+
+	if _, passwordSet := urlValue.User.Password(); passwordSet {
+		urlValue.User = url.UserPassword(urlValue.User.Username(), "REDACTED")
+	}
+
+	return urlValue.String(), true
 }
